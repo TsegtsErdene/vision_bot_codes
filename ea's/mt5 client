@@ -1,0 +1,147 @@
+//+------------------------------------------------------------------+
+//|                                      test_client_EA.mq5        |
+//|                        Copyright 2020, MetaQuotes Software Corp. |
+//|                                             https://www.mql5.com |
+//+------------------------------------------------------------------+
+#property copyright "Copyright 2020, MetaQuotes Software Corp."
+#property link      "https://www.mql5.com"
+#property version   "1.00"
+#include <Trade\Trade.mqh>
+
+CTrade trade;
+
+int socket;
+bool status;
+double mlot;
+string msymbol;
+
+int OnInit()
+{
+   socket = SocketCreate();
+   if (socket != INVALID_HANDLE)
+   {
+      if (SocketConnect(socket, "127.0.0.1", 1233, 1000))
+      {
+         Print("Connected to ", "127.0.0.1", ":", 1233);
+         status = true;
+      }
+      else
+      {
+         Print("Connection ", "127.0.0.1", ":", 1233, " error ", GetLastError());
+      }
+   }
+   else
+   {
+      Print("Socket creation error ", GetLastError());
+   }
+
+   return (INIT_SUCCEEDED);
+}
+
+void OnDeinit(const int reason)
+{
+   SocketClose(socket);
+}
+
+void OnTick()
+{
+   if (status)
+   {
+      string receivedData = SocketReceive(socket, 10);
+      if (StringLen(receivedData) > 0)
+      {
+         Print("Received data from server: ", receivedData);
+
+         // Process the received data and match with open positions
+         MatchOpenPositions(receivedData);
+      }
+   }
+}
+
+string SocketReceive(int sock, int timeout)
+{
+   char rsp[];
+   string result = "";
+   uint len;
+   uint timeout_check = GetTickCount() + timeout;
+   do
+   {
+      len = SocketIsReadable(sock);
+      if (len)
+      {
+         int rsp_len;
+         rsp_len = SocketRead(sock, rsp, len, timeout);
+         if (rsp_len > 0)
+         {
+            result += CharArrayToString(rsp, 0, rsp_len);
+         }
+      }
+   } while ((GetTickCount() < timeout_check) && !IsStopped());
+   return result;
+}
+
+void MatchOpenPositions(string receivedData)
+{
+   string positionsArray[];
+   int k = StringSplit(receivedData, '/', positionsArray);
+   if(k>0){
+   for (int i = 0; i < ArraySize(positionsArray); i++)
+   {
+      string positionInfo[];
+    
+      int m = StringSplit(positionsArray[i], '^', positionInfo);
+      if(m > 0){
+      string symbol = positionInfo[0];
+      double lot = StringToDouble(positionInfo[1]);
+      datetime orderOpenTime = StringToInteger(positionInfo[2]);
+      string comm = positionInfo[2];
+      int orderType = StringToInteger(positionInfo[3]);
+      int checker = 0;
+      
+      
+        // Match this position with historical orders
+      for (int j = 0; j < PositionsTotal(); j++)
+        {
+             ulong mticket = PositionGetTicket(i);
+             if(PositionSelectByTicket(mticket)){
+             msymbol = PositionGetString(POSITION_SYMBOL);
+             int morderType = PositionGetInteger(POSITION_TYPE);
+             mlot = PositionGetDouble(POSITION_VOLUME);
+             int mtime = PositionGetInteger(POSITION_TIME);
+             string mcomm = PositionGetString(POSITION_COMMENT);
+
+         if (comm == mcomm)
+         {
+            checker++;
+         }
+    
+      }
+      
+      }
+      
+      if(checker == 0 && orderOpenTime > TimeCurrent() - 30){
+      Print("Server: ",symbol," ",lot,"curr: ",TimeCurrent(),"sub ",TimeCurrent() - 30);
+      Print("Current: ",msymbol," ",mlot,orderOpenTime);
+        OpenPos(symbol,orderType,lot,comm);
+        checker++;
+      }
+      
+   }
+    
+   }
+}
+}
+void OpenPos(string symbol,int type,double lot,string comm){
+   double Ask = NormalizeDouble(SymbolInfoDouble(symbol,SYMBOL_ASK),_Digits);
+   
+   if(type == 0){
+   trade.Buy(lot,symbol,0.0,0.0,0.0,comm);
+   }
+   else if(type == 1)
+          {
+           trade.Sell(lot,symbol,0.0,0.0,0.0,comm);
+          }
+   
+   
+   
+}
